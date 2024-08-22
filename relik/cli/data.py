@@ -566,7 +566,6 @@ def create_windows(
             progress_bar.update(len(batched_data))
             batched_data = []
 
-
 @app.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
 def convert_to_dpr(
     input_path: str,
@@ -585,12 +584,6 @@ def convert_to_dpr(
 
     # read entities definitions
     logger.info(f"Loading documents from {documents_path}")
-    # with open(documents_path, "r") as f:
-    #     for line in f:
-    #         line_data = json.loads(line)
-    #         title = line_data["text"].strip()
-    #         definition = line_data["metadata"]["definition"].strip()
-    #         documents[title] = definition
 
     # infer document type
     document_file_type = Path(documents_path).suffix[1:]
@@ -625,50 +618,42 @@ def convert_to_dpr(
     with open(input_path, "r") as f, open(output_path, "w") as f_out:
         for line in tqdm(f, desc="Processing data"):
             sentence = json.loads(line)
-            # for sentence in aida_data:
-            question = (
-                sentence["doc_text"] if "doc_text" in sentence else sentence["text"]
-            )
+            question = sentence.get("doc_text", sentence.get("text", ""))
             positive_pssgs = []
             if label_type == "triplet":
-                for idx, triplet in enumerate(sentence["window_triplet_labels"]):
-                    relation = triplet["relation"]
+                for idx, triplet in enumerate(sentence.get("window_triplet_labels", [])):
+                    relation = triplet.get("relation", "")
                     if not relation:
                         continue
-                    # relation = relation.strip().lower()
                     relation = relation.strip()
-                    # relation = title_to_lower_map.get(relation, relation)
                     if relation in documents:
-                        # def_text = documents[relation]
                         doc = documents.get_document_from_text(relation)
                         doc.metadata["passage_id"] = (
-                            f"{sentence['doc_id']}_{sentence['offset']}_{idx}"
+                            f"{sentence.get('doc_id', 'unknown')}_{sentence.get('offset', idx)}_{idx}"
                         )
                         positive_pssgs.append(doc.to_dict())
                     else:
                         missing.add(relation)
                         print(f"Relation {relation} not found in definitions")
             else:
-                for idx, entity in enumerate(sentence["window_labels"]):
+                for idx, entity in enumerate(sentence.get("window_labels", [])):
+                    if len(entity) < 3:
+                        continue
                     entity = entity[2]
 
                     if not entity:
                         continue
 
-                    # entity = entity.strip().lower().replace("_", " ")
                     entity = entity.strip()
 
                     if entity == "--NME--":
                         continue
 
-                    # if title_map and entity in title_to_lower_map:
-                    # entity = title_to_lower_map.get(entity, entity)
                     entity = title_map.get(entity, entity)
                     if entity in documents:
                         doc = documents.get_document_from_text(entity)
-                        # doc.text = mapped_entity
                         doc.metadata["passage_id"] = (
-                            f"{sentence['doc_id']}_{sentence['offset']}_{idx}"
+                            f"{sentence.get('doc_id', 'unknown')}_{sentence.get('offset', idx)}_{idx}"
                         )
                         positive_pssgs.append(doc.to_dict())
                     else:
@@ -679,8 +664,8 @@ def convert_to_dpr(
                 continue
 
             dpr_sentence = {
-                "id": f"{sentence['doc_id']}_{sentence['offset']}",
-                "doc_topic": sentence["doc_topic"],
+                "id": f"{sentence.get('doc_id', 'unknown')}_{sentence.get('offset', 'unknown')}",
+                "doc_topic": sentence.get("doc_topic", ""),
                 "question": question,
                 "positive_ctxs": positive_pssgs,
                 "negative_ctxs": "",
@@ -693,6 +678,135 @@ def convert_to_dpr(
         print(f"Number of missing entities: {len(missing)}")
 
     return dpr
+
+
+
+# @app.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
+# def convert_to_dpr(
+#     input_path: str,
+#     output_path: str,
+#     documents_path: str,
+#     title_map: str = None,
+#     label_type: str = "span",
+# ):
+#     if label_type not in ["span", "triplet"]:
+#         raise ValueError(
+#             f"Invalid label type: {label_type}. Supported types are: `span`, `triplet`."
+#         )
+#     documents = {}
+#     output_path = Path(output_path)
+#     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+#     # read entities definitions
+#     logger.info(f"Loading documents from {documents_path}")
+#     # with open(documents_path, "r") as f:
+#     #     for line in f:
+#     #         line_data = json.loads(line)
+#     #         title = line_data["text"].strip()
+#     #         definition = line_data["metadata"]["definition"].strip()
+#     #         documents[title] = definition
+
+#     # infer document type
+#     document_file_type = Path(documents_path).suffix[1:]
+#     if document_file_type == "jsonl":
+#         documents = DocumentStore.from_file(documents_path)
+#     elif document_file_type == "csv":
+#         documents = DocumentStore.from_tsv(
+#             documents_path, delimiter=",", quoting=csv.QUOTE_NONE, ingore_case=True
+#         )
+#     elif document_file_type == "tsv":
+#         documents = DocumentStore.from_tsv(
+#             documents_path, delimiter="\t", quoting=csv.QUOTE_NONE, ingore_case=True
+#         )
+#     else:
+#         raise ValueError(
+#             f"Unknown document file type: {document_file_type}. Supported types are: jsonl, csv, and tsv."
+#         )
+
+#     if title_map is not None:
+#         with open(title_map, "r") as f:
+#             title_map = json.load(f)
+#     else:
+#         title_map = {}
+
+#     # store dpr data
+#     dpr = []
+#     # lower case titles
+#     title_to_lower_map = {doc.text.lower(): doc.text for doc in documents}
+#     # store missing entities
+#     missing = set()
+#     # Read input file
+#     with open(input_path, "r") as f, open(output_path, "w") as f_out:
+#         for line in tqdm(f, desc="Processing data"):
+#             sentence = json.loads(line)
+#             # for sentence in aida_data:
+#             question = (
+#                 sentence["doc_text"] if "doc_text" in sentence else sentence["text"]
+#             )
+#             positive_pssgs = []
+#             if label_type == "triplet":
+#                 for idx, triplet in enumerate(sentence["window_triplet_labels"]):
+#                     relation = triplet["relation"]
+#                     if not relation:
+#                         continue
+#                     # relation = relation.strip().lower()
+#                     relation = relation.strip()
+#                     # relation = title_to_lower_map.get(relation, relation)
+#                     if relation in documents:
+#                         # def_text = documents[relation]
+#                         doc = documents.get_document_from_text(relation)
+#                         doc.metadata["passage_id"] = (
+#                             f"{sentence['doc_id']}_{sentence['offset']}_{idx}"
+#                         )
+#                         positive_pssgs.append(doc.to_dict())
+#                     else:
+#                         missing.add(relation)
+#                         print(f"Relation {relation} not found in definitions")
+#             else:
+#                 for idx, entity in enumerate(sentence["window_labels"]):
+#                     entity = entity[2]
+
+#                     if not entity:
+#                         continue
+
+#                     # entity = entity.strip().lower().replace("_", " ")
+#                     entity = entity.strip()
+
+#                     if entity == "--NME--":
+#                         continue
+
+#                     # if title_map and entity in title_to_lower_map:
+#                     # entity = title_to_lower_map.get(entity, entity)
+#                     entity = title_map.get(entity, entity)
+#                     if entity in documents:
+#                         doc = documents.get_document_from_text(entity)
+#                         # doc.text = mapped_entity
+#                         doc.metadata["passage_id"] = (
+#                             f"{sentence['doc_id']}_{sentence['offset']}_{idx}"
+#                         )
+#                         positive_pssgs.append(doc.to_dict())
+#                     else:
+#                         missing.add(entity)
+#                         print(f"Entity {entity} not found in definitions")
+
+#             if len(positive_pssgs) == 0:
+#                 continue
+
+#             dpr_sentence = {
+#                 "id": f"{sentence['doc_id']}_{sentence['offset']}",
+#                 "doc_topic": sentence["doc_topic"],
+#                 "question": question,
+#                 "positive_ctxs": positive_pssgs,
+#                 "negative_ctxs": "",
+#                 "hard_negative_ctxs": "",
+#             }
+#             f_out.write(json.dumps(dpr_sentence) + "\n")
+
+#         for e in missing:
+#             print(e)
+#         print(f"Number of missing entities: {len(missing)}")
+
+#     return dpr
 
 
 if __name__ == "__main__":
